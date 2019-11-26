@@ -1,0 +1,792 @@
+if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[HealthCheck_IND_BOD]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure [dbo].[HealthCheck_IND_BOD]
+GO
+
+if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[HealthCheck_IND_EOD]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure [dbo].[HealthCheck_IND_EOD]
+GO
+
+if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[HealthCheck_NY_BOD]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure [dbo].[HealthCheck_NY_BOD]
+GO
+
+if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[HealthCheck_NY_EOD]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure [dbo].[HealthCheck_NY_EOD]
+GO
+
+if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[HealthCheck_SG_BOD]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure [dbo].[HealthCheck_SG_BOD]
+GO
+
+if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[HealthCheck_SG_EOD]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+drop procedure [dbo].[HealthCheck_SG_EOD]
+GO
+
+SET QUOTED_IDENTIFIER ON 
+GO
+SET ANSI_NULLS ON 
+GO
+
+CREATE Procedure [dbo].[HealthCheck_IND_BOD]
+AS
+Declare @Slot as datetime
+Declare @Area as varchar(500)
+Declare @Checkpoint as varchar(2000)
+Declare @Comments as varchar(1500)
+Declare @Location as char(10)
+Declare @EntryBy as varchar(500)
+DECLARE @result INT
+DECLARE @object INT
+Declare @ServerAddress as varchar(20)
+Declare @source as varchar(500)
+Declare @Subject as varchar(1000)
+DECLARE @Body VARCHAR(8000)
+Declare @SenderEmail as varchar(255)
+Declare @toemail as varchar(500)
+Declare @description as varchar(1000)
+Declare @temp as varchar(5000)
+
+
+set @temp=''
+Set @Slot = '1900-01-01 09:00:00'
+SET @ServerAddress = '69.73.146.99'
+SET @SenderEmail =  'intrant.admin@iflexsolutions.com'
+Set @Subject = 'Health Check For Data Center'
+SET @ServerAddress = 'BLR-MSG-01'
+
+if EXISTS(Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode <> 'NY' and a.loc_ShortCode <> 'SG')
+BEGIN
+	Declare Healthcheck cursor for 
+	Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+	from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+	and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+	and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode <> 'NY' and a.loc_ShortCode <> 'SG'
+
+	Set @Body = ''
+	Set @Body = @Body + '<table width=100% border=0 cellspacing=1 cellpadding=3 bgcolor=#FFFFFF align=center>'
+	Set @Body = @Body + '<tr  align=center><td colspan=5 bgcolor=#9FC4E1></td></tr>'
+	Set @Body = @Body + '<tr  align=center bgcolor=#9FC4E1 ><td colspan=5 ><font face=verdana size=2><b>Failure of checkpoints - EOD </b></font></td></tr>'
+	Set @Body = @Body + '<tr bgcolor="#9FC4E1" align="center"><td><font face=verdana size=2><b>Area</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Check Point</b></font></td><td><font face=verdana size=2><b>Failure Reason</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Location</b></font></td><td><font face=verdana size=2><b>Entry By</b></font></td></tr>'
+	
+	Open Healthcheck 
+	Fetch next from Healthcheck 
+	into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+	WHILE @@FETCH_STATUS = 0
+	begin
+	
+		Set @Body = @Body + '<tr bgcolor=#B4DAF8 align=center>' 
+		Set @Body = @Body + '<td><font face=verdana size=2>'+ @Area + '</font></td>'
+	    	Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ @Checkpoint + '</font></td>'
+		Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ case when @Comments is null then '--' else @Comments end + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @Location + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @EntryBy + '</font></td></tr>'
+	
+		Fetch Next From Healthcheck 
+		into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+
+	End 
+	Set @Body = @Body + '<tr bgcolor=#9FC4E1 ><td colspan=5 align=center><font face=verdana size=2><b>This is automated mail, please do not reply.</b></font></td></tr></table>'
+	--Print @Body	
+
+	Declare AlertMail  cursor for
+	Select alt_Email from tblAlertUsers where isActive = 1
+	Open AlertMail 
+	Fetch next from AlertMail
+	into @toemail
+	WHILE @@FETCH_STATUS = 0
+	begin
+		if @temp=''
+			Set  @temp = @toemail
+		else
+			Set  @temp = @temp+','+@toemail
+		
+		
+	Fetch next from AlertMail
+	Into @toemail
+	end 
+	Close AlertMail
+	DEALLOCATE AlertMail
+	--print @temp
+	
+	EXEC @result = sp_OACreate 'Jmail.SMTPMail', @object OUTPUT
+	IF @result = 0
+	BEGIN
+		-- Set Email Parameters
+		EXEC @result = sp_OASetProperty @object, 'ServerAddress', @ServerAddress
+		EXEC @result = sp_OASetProperty @object, 'Sender', @SenderEmail
+		EXEC @result = sp_OAMethod @object, 'AddRecipient', NULL, @temp
+		EXEC @result = sp_OASetProperty @object, 'Subject', @Subject
+		EXEC @result = sp_OASetProperty @object, 'ContentType', 'Text/HTML'
+		EXEC @result = sp_OASetProperty @object, 'Body', @Body
+		EXEC @result = sp_OAMethod @object, 'Execute', NULL
+		
+		--  Check if any error
+		EXEC @result = sp_OAGetErrorInfo @object, @source OUT, @description OUT
+		IF @result = 0
+		BEGIN
+			Print 'Source = ' + @source
+			Print 'Description = ' + @description
+		END
+	
+	END
+
+
+	EXEC @result = sp_OADestroy @source
+	EXEC @result = sp_OADestroy @description
+	EXEC @result = sp_OADestroy @object
+		
+	Close Healthcheck 
+	DEALLOCATE Healthcheck 
+END
+
+GO
+SET QUOTED_IDENTIFIER OFF 
+GO
+SET ANSI_NULLS ON 
+GO
+
+SET QUOTED_IDENTIFIER ON 
+GO
+SET ANSI_NULLS ON 
+GO
+
+CREATE Procedure [dbo].[HealthCheck_IND_EOD]
+AS
+Declare @Slot as datetime
+Declare @Area as varchar(500)
+Declare @Checkpoint as varchar(2000)
+Declare @Comments as varchar(1500)
+Declare @Location as char(10)
+Declare @EntryBy as varchar(500)
+DECLARE @result INT
+DECLARE @object INT
+Declare @ServerAddress as varchar(20)
+Declare @source as varchar(500)
+Declare @Subject as varchar(1000)
+DECLARE @Body VARCHAR(8000)
+Declare @SenderEmail as varchar(255)
+Declare @toemail as varchar(500)
+Declare @description as varchar(1000)
+Declare @temp as varchar(5000)
+
+
+set @temp=''
+Set @Slot = '1900-01-01 23:00:00'
+SET @ServerAddress = '69.73.146.99'
+SET @SenderEmail =  'intrant.admin@iflexsolutions.com'
+Set @Subject = 'Health Check For Data Center'
+SET @ServerAddress = 'BLR-MSG-01'
+
+if EXISTS(Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode <> 'NY' and a.loc_ShortCode <> 'SG')
+BEGIN
+	Declare Healthcheck cursor for 
+	Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+	from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+	and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+	and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode <> 'NY' and a.loc_ShortCode <> 'SG'
+
+	Set @Body = ''
+	Set @Body = @Body + '<table width=100% border=0 cellspacing=1 cellpadding=3 bgcolor=#FFFFFF align=center>'
+	Set @Body = @Body + '<tr  align=center><td colspan=5 bgcolor=#9FC4E1></td></tr>'
+	Set @Body = @Body + '<tr  align=center bgcolor=#9FC4E1 ><td colspan=5 ><font face=verdana size=2><b>Failure of checkpoints - EOD </b></font></td></tr>'
+	Set @Body = @Body + '<tr bgcolor="#9FC4E1" align="center"><td><font face=verdana size=2><b>Area</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Check Point</b></font></td><td><font face=verdana size=2><b>Failure Reason</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Location</b></font></td><td><font face=verdana size=2><b>Entry By</b></font></td></tr>'
+	
+	Open Healthcheck 
+	Fetch next from Healthcheck 
+	into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+	WHILE @@FETCH_STATUS = 0
+	begin
+	
+		Set @Body = @Body + '<tr bgcolor=#B4DAF8 align=center>' 
+		Set @Body = @Body + '<td><font face=verdana size=2>'+ @Area + '</font></td>'
+	    	Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ @Checkpoint + '</font></td>'
+		Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ case when @Comments is null then '--' else @Comments end + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @Location + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @EntryBy + '</font></td></tr>'
+	
+		Fetch Next From Healthcheck 
+		into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+
+	End 
+	Set @Body = @Body + '<tr bgcolor=#9FC4E1 ><td colspan=5 align=center><font face=verdana size=2><b>This is automated mail, please do not reply.</b></font></td></tr></table>'
+	--Print @Body	
+
+	Declare AlertMail  cursor for
+	Select alt_Email from tblAlertUsers where isActive = 1
+	Open AlertMail 
+	Fetch next from AlertMail
+	into @toemail
+	WHILE @@FETCH_STATUS = 0
+	begin
+		if @temp=''
+			Set  @temp = @toemail
+		else
+			Set  @temp = @temp+','+@toemail
+		
+		
+	Fetch next from AlertMail
+	Into @toemail
+	end 
+	Close AlertMail
+	DEALLOCATE AlertMail
+	--print @temp
+	
+	EXEC @result = sp_OACreate 'Jmail.SMTPMail', @object OUTPUT
+	IF @result = 0
+	BEGIN
+		-- Set Email Parameters
+		EXEC @result = sp_OASetProperty @object, 'ServerAddress', @ServerAddress
+		EXEC @result = sp_OASetProperty @object, 'Sender', @SenderEmail
+		EXEC @result = sp_OAMethod @object, 'AddRecipient', NULL, @temp
+		EXEC @result = sp_OASetProperty @object, 'Subject', @Subject
+		EXEC @result = sp_OASetProperty @object, 'ContentType', 'Text/HTML'
+		EXEC @result = sp_OASetProperty @object, 'Body', @Body
+		EXEC @result = sp_OAMethod @object, 'Execute', NULL
+		
+		--  Check if any error
+		EXEC @result = sp_OAGetErrorInfo @object, @source OUT, @description OUT
+		IF @result = 0
+		BEGIN
+			Print 'Source = ' + @source
+			Print 'Description = ' + @description
+		END
+	
+	END
+
+
+	EXEC @result = sp_OADestroy @source
+	EXEC @result = sp_OADestroy @description
+	EXEC @result = sp_OADestroy @object
+		
+	Close Healthcheck 
+	DEALLOCATE Healthcheck 
+END
+
+GO
+SET QUOTED_IDENTIFIER OFF 
+GO
+SET ANSI_NULLS ON 
+GO
+
+SET QUOTED_IDENTIFIER ON 
+GO
+SET ANSI_NULLS ON 
+GO
+
+CREATE Procedure [dbo].[HealthCheck_NY_BOD]
+AS
+Declare @Slot as datetime
+Declare @Area as varchar(500)
+Declare @Checkpoint as varchar(2000)
+Declare @Comments as varchar(1500)
+Declare @Location as char(10)
+Declare @EntryBy as varchar(500)
+DECLARE @result INT
+DECLARE @object INT
+Declare @ServerAddress as varchar(20)
+Declare @source as varchar(500)
+Declare @Subject as varchar(1000)
+DECLARE @Body VARCHAR(8000)
+Declare @SenderEmail as varchar(255)
+Declare @toemail as varchar(500)
+Declare @description as varchar(1000)
+Declare @temp as varchar(5000)
+
+
+set @temp=''
+Set @Slot = '1900-01-01 09:00:00'
+SET @ServerAddress = '69.73.146.99'
+SET @SenderEmail =  'intrant.admin@iflexsolutions.com'
+Set @Subject = 'Health Check For Data Center'
+SET @ServerAddress = 'BLR-MSG-01'
+
+if EXISTS(Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode = 'NY')
+BEGIN
+	Declare Healthcheck cursor for 
+	Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+	from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+	and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+	and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode = 'NY'
+
+	Set @Body = ''
+	Set @Body = @Body + '<table width=100% border=0 cellspacing=1 cellpadding=3 bgcolor=#FFFFFF align=center>'
+	Set @Body = @Body + '<tr  align=center><td colspan=5 bgcolor=#9FC4E1></td></tr>'
+	Set @Body = @Body + '<tr  align=center bgcolor=#9FC4E1 ><td colspan=5 ><font face=verdana size=2><b>Failure of checkpoints - EOD </b></font></td></tr>'
+	Set @Body = @Body + '<tr bgcolor="#9FC4E1" align="center"><td><font face=verdana size=2><b>Area</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Check Point</b></font></td><td><font face=verdana size=2><b>Failure Reason</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Location</b></font></td><td><font face=verdana size=2><b>Entry By</b></font></td></tr>'
+	
+	Open Healthcheck 
+	Fetch next from Healthcheck 
+	into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+	WHILE @@FETCH_STATUS = 0
+	begin
+	
+		Set @Body = @Body + '<tr bgcolor=#B4DAF8 align=center>' 
+		Set @Body = @Body + '<td><font face=verdana size=2>'+ @Area + '</font></td>'
+	    	Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ @Checkpoint + '</font></td>'
+		Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ case when @Comments is null then '--' else @Comments end + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @Location + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @EntryBy + '</font></td></tr>'
+	
+		Fetch Next From Healthcheck 
+		into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+
+	End 
+	Set @Body = @Body + '<tr bgcolor=#9FC4E1 ><td colspan=5 align=center><font face=verdana size=2><b>This is automated mail, please do not reply.</b></font></td></tr></table>'
+	--Print @Body	
+
+	Declare AlertMail  cursor for
+	Select alt_Email from tblAlertUsers where isActive = 1
+	Open AlertMail 
+	Fetch next from AlertMail
+	into @toemail
+	WHILE @@FETCH_STATUS = 0
+	begin
+		if @temp=''
+			Set  @temp = @toemail
+		else
+			Set  @temp = @temp+','+@toemail
+		
+		
+	Fetch next from AlertMail
+	Into @toemail
+	end 
+	Close AlertMail
+	DEALLOCATE AlertMail
+	--print @temp
+	
+	EXEC @result = sp_OACreate 'Jmail.SMTPMail', @object OUTPUT
+	IF @result = 0
+	BEGIN
+		-- Set Email Parameters
+		EXEC @result = sp_OASetProperty @object, 'ServerAddress', @ServerAddress
+		EXEC @result = sp_OASetProperty @object, 'Sender', @SenderEmail
+		EXEC @result = sp_OAMethod @object, 'AddRecipient', NULL, @temp
+		EXEC @result = sp_OASetProperty @object, 'Subject', @Subject
+		EXEC @result = sp_OASetProperty @object, 'ContentType', 'Text/HTML'
+		EXEC @result = sp_OASetProperty @object, 'Body', @Body
+		EXEC @result = sp_OAMethod @object, 'Execute', NULL
+		
+		--  Check if any error
+		EXEC @result = sp_OAGetErrorInfo @object, @source OUT, @description OUT
+		IF @result = 0
+		BEGIN
+			Print 'Source = ' + @source
+			Print 'Description = ' + @description
+		END
+	
+	END
+
+
+	EXEC @result = sp_OADestroy @source
+	EXEC @result = sp_OADestroy @description
+	EXEC @result = sp_OADestroy @object
+		
+	Close Healthcheck 
+	DEALLOCATE Healthcheck 
+END
+
+GO
+SET QUOTED_IDENTIFIER OFF 
+GO
+SET ANSI_NULLS ON 
+GO
+
+SET QUOTED_IDENTIFIER ON 
+GO
+SET ANSI_NULLS ON 
+GO
+
+CREATE Procedure [dbo].[HealthCheck_NY_EOD]
+AS
+Declare @Slot as datetime
+Declare @Area as varchar(500)
+Declare @Checkpoint as varchar(2000)
+Declare @Comments as varchar(1500)
+Declare @Location as char(10)
+Declare @EntryBy as varchar(500)
+DECLARE @result INT
+DECLARE @object INT
+Declare @ServerAddress as varchar(20)
+Declare @source as varchar(500)
+Declare @Subject as varchar(1000)
+DECLARE @Body VARCHAR(8000)
+Declare @SenderEmail as varchar(255)
+Declare @toemail as varchar(500)
+Declare @description as varchar(1000)
+Declare @temp as varchar(5000)
+
+
+set @temp=''
+Set @Slot = '1900-01-01 23:00:00'
+SET @ServerAddress = '69.73.146.99'
+SET @SenderEmail =  'intrant.admin@iflexsolutions.com'
+Set @Subject = 'Health Check For Data Center'
+SET @ServerAddress = 'BLR-MSG-01'
+
+if EXISTS(Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode = 'NY')
+BEGIN
+	Declare Healthcheck cursor for 
+	Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+	from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+	and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+	and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode = 'NY'
+
+	Set @Body = ''
+	Set @Body = @Body + '<table width=100% border=0 cellspacing=1 cellpadding=3 bgcolor=#FFFFFF align=center>'
+	Set @Body = @Body + '<tr  align=center><td colspan=5 bgcolor=#9FC4E1></td></tr>'
+	Set @Body = @Body + '<tr  align=center bgcolor=#9FC4E1 ><td colspan=5 ><font face=verdana size=2><b>Failure of checkpoints - EOD </b></font></td></tr>'
+	Set @Body = @Body + '<tr bgcolor="#9FC4E1" align="center"><td><font face=verdana size=2><b>Area</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Check Point</b></font></td><td><font face=verdana size=2><b>Failure Reason</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Location</b></font></td><td><font face=verdana size=2><b>Entry By</b></font></td></tr>'
+	
+	Open Healthcheck 
+	Fetch next from Healthcheck 
+	into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+	WHILE @@FETCH_STATUS = 0
+	begin
+	
+		Set @Body = @Body + '<tr bgcolor=#B4DAF8 align=center>' 
+		Set @Body = @Body + '<td><font face=verdana size=2>'+ @Area + '</font></td>'
+	    	Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ @Checkpoint + '</font></td>'
+		Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ case when @Comments is null then '--' else @Comments end + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @Location + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @EntryBy + '</font></td></tr>'
+	
+		Fetch Next From Healthcheck 
+		into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+
+	End 
+	Set @Body = @Body + '<tr bgcolor=#9FC4E1 ><td colspan=5 align=center><font face=verdana size=2><b>This is automated mail, please do not reply.</b></font></td></tr></table>'
+	--Print @Body	
+
+	Declare AlertMail  cursor for
+	Select alt_Email from tblAlertUsers where isActive = 1
+	Open AlertMail 
+	Fetch next from AlertMail
+	into @toemail
+	WHILE @@FETCH_STATUS = 0
+	begin
+		if @temp=''
+			Set  @temp = @toemail
+		else
+			Set  @temp = @temp+','+@toemail
+		
+		
+	Fetch next from AlertMail
+	Into @toemail
+	end 
+	Close AlertMail
+	DEALLOCATE AlertMail
+	--print @temp
+	
+	EXEC @result = sp_OACreate 'Jmail.SMTPMail', @object OUTPUT
+	IF @result = 0
+	BEGIN
+		-- Set Email Parameters
+		EXEC @result = sp_OASetProperty @object, 'ServerAddress', @ServerAddress
+		EXEC @result = sp_OASetProperty @object, 'Sender', @SenderEmail
+		EXEC @result = sp_OAMethod @object, 'AddRecipient', NULL, @temp
+		EXEC @result = sp_OASetProperty @object, 'Subject', @Subject
+		EXEC @result = sp_OASetProperty @object, 'ContentType', 'Text/HTML'
+		EXEC @result = sp_OASetProperty @object, 'Body', @Body
+		EXEC @result = sp_OAMethod @object, 'Execute', NULL
+		
+		--  Check if any error
+		EXEC @result = sp_OAGetErrorInfo @object, @source OUT, @description OUT
+		IF @result = 0
+		BEGIN
+			Print 'Source = ' + @source
+			Print 'Description = ' + @description
+		END
+	
+	END
+
+
+	EXEC @result = sp_OADestroy @source
+	EXEC @result = sp_OADestroy @description
+	EXEC @result = sp_OADestroy @object
+		
+	Close Healthcheck 
+	DEALLOCATE Healthcheck 
+END
+
+GO
+SET QUOTED_IDENTIFIER OFF 
+GO
+SET ANSI_NULLS ON 
+GO
+
+SET QUOTED_IDENTIFIER ON 
+GO
+SET ANSI_NULLS ON 
+GO
+
+CREATE Procedure [dbo].[HealthCheck_SG_BOD]
+AS
+Declare @Slot as datetime
+Declare @Area as varchar(500)
+Declare @Checkpoint as varchar(2000)
+Declare @Comments as varchar(1500)
+Declare @Location as char(10)
+Declare @EntryBy as varchar(500)
+DECLARE @result INT
+DECLARE @object INT
+Declare @ServerAddress as varchar(20)
+Declare @source as varchar(500)
+Declare @Subject as varchar(1000)
+DECLARE @Body VARCHAR(8000)
+Declare @SenderEmail as varchar(255)
+Declare @toemail as varchar(500)
+Declare @description as varchar(1000)
+Declare @temp as varchar(5000)
+
+
+set @temp=''
+Set @Slot = '1900-01-01 09:00:00'
+SET @ServerAddress = '69.73.146.99'
+SET @SenderEmail =  'intrant.admin@iflexsolutions.com'
+Set @Subject = 'Health Check For Data Center'
+SET @ServerAddress = 'BLR-MSG-01'
+
+if EXISTS(Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode = 'SG')
+BEGIN
+	Declare Healthcheck cursor for 
+	Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+	from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+	and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+	and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode = 'NY'
+
+	Set @Body = ''
+	Set @Body = @Body + '<table width=100% border=0 cellspacing=1 cellpadding=3 bgcolor=#FFFFFF align=center>'
+	Set @Body = @Body + '<tr  align=center><td colspan=5 bgcolor=#9FC4E1></td></tr>'
+	Set @Body = @Body + '<tr  align=center bgcolor=#9FC4E1 ><td colspan=5 ><font face=verdana size=2><b>Failure of checkpoints - EOD </b></font></td></tr>'
+	Set @Body = @Body + '<tr bgcolor="#9FC4E1" align="center"><td><font face=verdana size=2><b>Area</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Check Point</b></font></td><td><font face=verdana size=2><b>Failure Reason</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Location</b></font></td><td><font face=verdana size=2><b>Entry By</b></font></td></tr>'
+	
+	Open Healthcheck 
+	Fetch next from Healthcheck 
+	into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+	WHILE @@FETCH_STATUS = 0
+	begin
+	
+		Set @Body = @Body + '<tr bgcolor=#B4DAF8 align=center>' 
+		Set @Body = @Body + '<td><font face=verdana size=2>'+ @Area + '</font></td>'
+	    	Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ @Checkpoint + '</font></td>'
+		Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ case when @Comments is null then '--' else @Comments end + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @Location + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @EntryBy + '</font></td></tr>'
+	
+		Fetch Next From Healthcheck 
+		into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+
+	End 
+	Set @Body = @Body + '<tr bgcolor=#9FC4E1 ><td colspan=5 align=center><font face=verdana size=2><b>This is automated mail, please do not reply.</b></font></td></tr></table>'
+	--Print @Body	
+
+	Declare AlertMail  cursor for
+	Select alt_Email from tblAlertUsers where isActive = 1
+	Open AlertMail 
+	Fetch next from AlertMail
+	into @toemail
+	WHILE @@FETCH_STATUS = 0
+	begin
+		if @temp=''
+			Set  @temp = @toemail
+		else
+			Set  @temp = @temp+','+@toemail
+		
+		
+	Fetch next from AlertMail
+	Into @toemail
+	end 
+	Close AlertMail
+	DEALLOCATE AlertMail
+	--print @temp
+	
+	EXEC @result = sp_OACreate 'Jmail.SMTPMail', @object OUTPUT
+	IF @result = 0
+	BEGIN
+		-- Set Email Parameters
+		EXEC @result = sp_OASetProperty @object, 'ServerAddress', @ServerAddress
+		EXEC @result = sp_OASetProperty @object, 'Sender', @SenderEmail
+		EXEC @result = sp_OAMethod @object, 'AddRecipient', NULL, @temp
+		EXEC @result = sp_OASetProperty @object, 'Subject', @Subject
+		EXEC @result = sp_OASetProperty @object, 'ContentType', 'Text/HTML'
+		EXEC @result = sp_OASetProperty @object, 'Body', @Body
+		EXEC @result = sp_OAMethod @object, 'Execute', NULL
+		
+		--  Check if any error
+		EXEC @result = sp_OAGetErrorInfo @object, @source OUT, @description OUT
+		IF @result = 0
+		BEGIN
+			Print 'Source = ' + @source
+			Print 'Description = ' + @description
+		END
+	
+	END
+
+
+	EXEC @result = sp_OADestroy @source
+	EXEC @result = sp_OADestroy @description
+	EXEC @result = sp_OADestroy @object
+		
+	Close Healthcheck 
+	DEALLOCATE Healthcheck 
+END
+
+GO
+SET QUOTED_IDENTIFIER OFF 
+GO
+SET ANSI_NULLS ON 
+GO
+
+SET QUOTED_IDENTIFIER ON 
+GO
+SET ANSI_NULLS ON 
+GO
+
+CREATE Procedure [dbo].[HealthCheck_SG_EOD]
+AS
+Declare @Slot as datetime
+Declare @Area as varchar(500)
+Declare @Checkpoint as varchar(2000)
+Declare @Comments as varchar(1500)
+Declare @Location as char(10)
+Declare @EntryBy as varchar(500)
+DECLARE @result INT
+DECLARE @object INT
+Declare @ServerAddress as varchar(20)
+Declare @source as varchar(500)
+Declare @Subject as varchar(1000)
+DECLARE @Body VARCHAR(8000)
+Declare @SenderEmail as varchar(255)
+Declare @toemail as varchar(500)
+Declare @description as varchar(1000)
+Declare @temp as varchar(5000)
+
+
+set @temp=''
+Set @Slot = '1900-01-01 23:00:00'
+SET @ServerAddress = '69.73.146.99'
+SET @SenderEmail =  'intrant.admin@iflexsolutions.com'
+Set @Subject = 'Health Check For Data Center'
+SET @ServerAddress = 'BLR-MSG-01'
+
+if EXISTS(Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode = 'SG')
+BEGIN
+	Declare Healthcheck cursor for 
+	Select ar.area_Name,cp.chkpnt_Name,a.tdt_Comments,a.loc_ShortCode,(b.tdm_Entryby + '(' + a.usr_EmpID + ')') as EntryBy
+	from tblTransactionDetails a, tblTransactionDetailsMaster b,tblAreas ar,tblCheckpoint cp  where a.tdm_ID = b.tdm_ID 
+	and a.area_ID = ar.area_ID and cp.chkpnt_ID = a.chkpnt_ID and tdt_ActivityStatus = 2 
+	and b.act_Time = @Slot  and DateDiff(dd,a.tdt_Date,getdate()) = 0 and a.loc_ShortCode = 'NY'
+
+	Set @Body = ''
+	Set @Body = @Body + '<table width=100% border=0 cellspacing=1 cellpadding=3 bgcolor=#FFFFFF align=center>'
+	Set @Body = @Body + '<tr  align=center><td colspan=5 bgcolor=#9FC4E1></td></tr>'
+	Set @Body = @Body + '<tr  align=center bgcolor=#9FC4E1 ><td colspan=5 ><font face=verdana size=2><b>Failure of checkpoints - EOD </b></font></td></tr>'
+	Set @Body = @Body + '<tr bgcolor="#9FC4E1" align="center"><td><font face=verdana size=2><b>Area</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Check Point</b></font></td><td><font face=verdana size=2><b>Failure Reason</b></font></td>'
+	Set @Body = @Body + '<td><font face=verdana size=2><b>Location</b></font></td><td><font face=verdana size=2><b>Entry By</b></font></td></tr>'
+	
+	Open Healthcheck 
+	Fetch next from Healthcheck 
+	into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+	WHILE @@FETCH_STATUS = 0
+	begin
+	
+		Set @Body = @Body + '<tr bgcolor=#B4DAF8 align=center>' 
+		Set @Body = @Body + '<td><font face=verdana size=2>'+ @Area + '</font></td>'
+	    	Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ @Checkpoint + '</font></td>'
+		Set @Body = @Body + '<td align=left><font face=verdana size=2>'+ case when @Comments is null then '--' else @Comments end + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @Location + '</font></td>'
+	    	Set @Body = @Body + '<td><font face=verdana size=2>'+ @EntryBy + '</font></td></tr>'
+	
+		Fetch Next From Healthcheck 
+		into @Area,@Checkpoint,@Comments,@Location,@EntryBy
+
+	End 
+	Set @Body = @Body + '<tr bgcolor=#9FC4E1 ><td colspan=5 align=center><font face=verdana size=2><b>This is automated mail, please do not reply.</b></font></td></tr></table>'
+	--Print @Body	
+
+	Declare AlertMail  cursor for
+	Select alt_Email from tblAlertUsers where isActive = 1
+	Open AlertMail 
+	Fetch next from AlertMail
+	into @toemail
+	WHILE @@FETCH_STATUS = 0
+	begin
+		if @temp=''
+			Set  @temp = @toemail
+		else
+			Set  @temp = @temp+','+@toemail
+		
+		
+	Fetch next from AlertMail
+	Into @toemail
+	end 
+	Close AlertMail
+	DEALLOCATE AlertMail
+	--print @temp
+	
+	EXEC @result = sp_OACreate 'Jmail.SMTPMail', @object OUTPUT
+	IF @result = 0
+	BEGIN
+		-- Set Email Parameters
+		EXEC @result = sp_OASetProperty @object, 'ServerAddress', @ServerAddress
+		EXEC @result = sp_OASetProperty @object, 'Sender', @SenderEmail
+		EXEC @result = sp_OAMethod @object, 'AddRecipient', NULL, @temp
+		EXEC @result = sp_OASetProperty @object, 'Subject', @Subject
+		EXEC @result = sp_OASetProperty @object, 'ContentType', 'Text/HTML'
+		EXEC @result = sp_OASetProperty @object, 'Body', @Body
+		EXEC @result = sp_OAMethod @object, 'Execute', NULL
+		
+		--  Check if any error
+		EXEC @result = sp_OAGetErrorInfo @object, @source OUT, @description OUT
+		IF @result = 0
+		BEGIN
+			Print 'Source = ' + @source
+			Print 'Description = ' + @description
+		END
+	
+	END
+
+
+	EXEC @result = sp_OADestroy @source
+	EXEC @result = sp_OADestroy @description
+	EXEC @result = sp_OADestroy @object
+		
+	Close Healthcheck 
+	DEALLOCATE Healthcheck 
+END
+
+GO
+SET QUOTED_IDENTIFIER OFF 
+GO
+SET ANSI_NULLS ON 
+GO
+
